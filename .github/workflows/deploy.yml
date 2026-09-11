@@ -21,8 +21,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python3.13 -m pip install --upgrade pip
-          python3.13 -m pip install -r requirements.txt
+          TMPDIR="$HOME/pip-tmp" python3.13 -m pip install --upgrade pip --no-cache-dir
+          TMPDIR="$HOME/pip-tmp" python3.13 -m pip install --no-cache-dir -r requirements.txt
 
       - name: Stop existing inference service
         run: |
