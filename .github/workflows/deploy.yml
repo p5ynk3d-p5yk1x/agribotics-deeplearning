@@ -57,7 +57,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
         run: |
-          nohup python3.13 main.py > inference.log 2>&1 &
+          nohup python3.13 -u main.py > inference.log 2>&1 &
           echo $! > inference.pid
 
       - name: Verify service started
