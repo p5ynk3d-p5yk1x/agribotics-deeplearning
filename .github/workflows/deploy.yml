@@ -24,87 +24,24 @@ jobs:
           TMPDIR="$HOME/pip-tmp" python3.13 -m pip install --upgrade pip --no-cache-dir
           TMPDIR="$HOME/pip-tmp" python3.13 -m pip install --no-cache-dir -r requirements.txt
 
-      - name: Stop existing inference service
-        run: |
-          if [ -f inference.pid ]; then
-            PID=$(cat inference.pid)
-
-            if kill -0 "$PID" 2>/dev/null; then
-              echo "Stopping existing inference service (PID: $PID)..."
-              kill "$PID"
-
-              for i in {1..30}; do
-                if ! kill -0 "$PID" 2>/dev/null; then
-                  echo "Service stopped gracefully."
-                  break
-                fi
-                sleep 1
-              done
-
-              if kill -0 "$PID" 2>/dev/null; then
-                echo "Service did not stop gracefully. Force killing..."
-                kill -9 "$PID" 2>/dev/null || true
-              fi
-            else
-              echo "PID file exists, but process $PID is not running."
-            fi
-
-            rm -f inference.pid
-          else
-            echo "No existing inference service found."
-          fi
-
-      - name: Verify Kafka configuration
+      - name: Restart inference service
         env:
           KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
         run: |
-          if [ -z "$KAFKA_BOOTSTRAP_SERVERS" ]; then
-            echo "KAFKA_BOOTSTRAP_SERVERS is not configured."
-            exit 1
-          fi
-
-          echo "KAFKA_BOOTSTRAP_SERVERS is configured."
-
-      - name: Start inference service
-        env:
-          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
-        run: |
-          echo "Starting inference service..."
-
-          setsid bash -c 'exec python3.13 main.py' \
-            >> inference.log 2>&1 < /dev/null &
-
-          PID=$!
-          echo "$PID" > inference.pid
-
-          echo "Inference service started with PID: $PID"
+          sudo systemctl restart agribotics-inference
 
       - name: Verify inference service
         run: |
-          echo "Waiting for inference service to become ready..."
+          sleep 5
 
-          for i in {1..30}; do
-            if grep -q "Waiting for Kafka inference events" inference.log; then
-              echo "Inference service started successfully."
-              echo "PID: $(cat inference.pid)"
-              echo "Python: $(python3.13 --version)"
-              exit 0
-            fi
-
-            PID=$(cat inference.pid 2>/dev/null || true)
-
-            if [ -z "$PID" ] || ! kill -0 "$PID" 2>/dev/null; then
-              echo "Inference service exited unexpectedly."
-              echo "----- inference.log -----"
-              tail -200 inference.log
-              rm -f inference.pid
-              exit 1
-            fi
-
-            sleep 1
-          done
-
-          echo "Inference service did not become ready within 30 seconds."
-          echo "----- inference.log -----"
-          tail -200 inference.log
-          exit 1
+          if sudo systemctl is-active --quiet agribotics-inference; then
+            echo "Inference service is running."
+            sudo systemctl status agribotics-inference --no-pager
+          else
+            echo "Inference service failed to start."
+            echo "----- SERVICE STATUS -----"
+            sudo systemctl status agribotics-inference --no-pager || true
+            echo "----- SERVICE LOG -----"
+            sudo journalctl -u agribotics-inference --no-pager -n 100
+            exit 1
+          fi
