@@ -1,0 +1,9 @@
+torch
+torchvision
+timm
+albumentations
+opencv-python-headless
+Pillow
+numpy
+confluent-kafka
+boto3[crt]
