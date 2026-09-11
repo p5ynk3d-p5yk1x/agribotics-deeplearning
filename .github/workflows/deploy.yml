@@ -33,8 +33,9 @@ jobs:
               echo "Stopping existing inference service (PID: $PID)..."
               kill "$PID"
 
-              for i in {1..10}; do
+              for i in {1..30}; do
                 if ! kill -0 "$PID" 2>/dev/null; then
+                  echo "Service stopped gracefully."
                   break
                 fi
                 sleep 1
@@ -45,7 +46,7 @@ jobs:
                 kill -9 "$PID" 2>/dev/null || true
               fi
             else
-              echo "Existing process is not running."
+              echo "PID file exists, but process $PID is not running."
             fi
 
             rm -f inference.pid
@@ -53,24 +54,57 @@ jobs:
             echo "No existing inference service found."
           fi
 
+      - name: Verify Kafka configuration
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
+        run: |
+          if [ -z "$KAFKA_BOOTSTRAP_SERVERS" ]; then
+            echo "KAFKA_BOOTSTRAP_SERVERS is not configured."
+            exit 1
+          fi
+
+          echo "KAFKA_BOOTSTRAP_SERVERS is configured."
+
       - name: Start inference service
         env:
           KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
         run: |
-          nohup python3.13 -u main.py > inference.log 2>&1 &
-          echo $! > inference.pid
+          echo "Starting inference service..."
 
-      - name: Verify service started
+          setsid bash -c 'exec python3.13 main.py' \
+            >> inference.log 2>&1 < /dev/null &
+
+          PID=$!
+          echo "$PID" > inference.pid
+
+          echo "Inference service started with PID: $PID"
+
+      - name: Verify inference service
         run: |
-          sleep 5
+          echo "Waiting for inference service to become ready..."
 
-          if kill -0 "$(cat inference.pid)" 2>/dev/null; then
-            echo "Inference service started successfully."
-            echo "PID: $(cat inference.pid)"
-            echo "Python: $(python3.13 --version)"
-          else
-            echo "Inference service failed to start."
-            echo "----- inference.log -----"
-            cat inference.log
-            exit 1
-          fi
+          for i in {1..30}; do
+            if grep -q "Waiting for Kafka inference events" inference.log; then
+              echo "Inference service started successfully."
+              echo "PID: $(cat inference.pid)"
+              echo "Python: $(python3.13 --version)"
+              exit 0
+            fi
+
+            PID=$(cat inference.pid 2>/dev/null || true)
+
+            if [ -z "$PID" ] || ! kill -0 "$PID" 2>/dev/null; then
+              echo "Inference service exited unexpectedly."
+              echo "----- inference.log -----"
+              tail -200 inference.log
+              rm -f inference.pid
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          echo "Inference service did not become ready within 30 seconds."
+          echo "----- inference.log -----"
+          tail -200 inference.log
+          exit 1
