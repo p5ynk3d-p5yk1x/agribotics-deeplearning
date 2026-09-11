@@ -24,24 +24,49 @@ jobs:
           TMPDIR="$HOME/pip-tmp" python3.13 -m pip install --upgrade pip --no-cache-dir
           TMPDIR="$HOME/pip-tmp" python3.13 -m pip install --no-cache-dir -r requirements.txt
 
-      - name: Restart inference service
+      - name: Configure inference environment
         env:
           KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
         run: |
+          sudo mkdir -p /etc/agribotics
+
+          sudo tee /etc/agribotics/inference.env > /dev/null <<EOF
+          KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+          EOF
+
+          sudo chmod 600 /etc/agribotics/inference.env
+
+      - name: Prepare inference log
+        run: |
+          sudo touch /home/ec2-user/agribotics-deeplearning/inference.log
+          sudo chown ec2-user:ec2-user /home/ec2-user/agribotics-deeplearning/inference.log
+
+      - name: Restart inference service
+        run: |
+          sudo systemctl daemon-reload
           sudo systemctl restart agribotics-inference
 
       - name: Verify inference service
         run: |
-          sleep 5
+          sleep 10
 
           if sudo systemctl is-active --quiet agribotics-inference; then
             echo "Inference service is running."
+            echo "----- SERVICE STATUS -----"
             sudo systemctl status agribotics-inference --no-pager
+            echo "----- INFERENCE LOG -----"
+            tail -50 /home/ec2-user/agribotics-deeplearning/inference.log
           else
             echo "Inference service failed to start."
+
             echo "----- SERVICE STATUS -----"
             sudo systemctl status agribotics-inference --no-pager || true
-            echo "----- SERVICE LOG -----"
-            sudo journalctl -u agribotics-inference --no-pager -n 100
+
+            echo "----- SYSTEMD LOG -----"
+            sudo journalctl -u agribotics-inference --no-pager -n 100 || true
+
+            echo "----- INFERENCE LOG -----"
+            tail -100 /home/ec2-user/agribotics-deeplearning/inference.log || true
+
             exit 1
           fi
