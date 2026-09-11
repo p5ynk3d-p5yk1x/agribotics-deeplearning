@@ -38,12 +38,15 @@ jobs:
 
       - name: Prepare inference log
         run: |
-          sudo touch /home/ec2-user/agribotics-deeplearning/inference.log
-          sudo chown ec2-user:ec2-user /home/ec2-user/agribotics-deeplearning/inference.log
+          touch inference.log
+          chmod 644 inference.log
+
+      - name: Reload systemd
+        run: |
+          sudo systemctl daemon-reload
 
       - name: Restart inference service
         run: |
-          sudo systemctl daemon-reload
           sudo systemctl restart agribotics-inference
 
       - name: Verify inference service
@@ -55,18 +58,14 @@ jobs:
             echo "----- SERVICE STATUS -----"
             sudo systemctl status agribotics-inference --no-pager
             echo "----- INFERENCE LOG -----"
-            tail -50 /home/ec2-user/agribotics-deeplearning/inference.log
+            tail -100 inference.log
           else
             echo "Inference service failed to start."
-
             echo "----- SERVICE STATUS -----"
             sudo systemctl status agribotics-inference --no-pager || true
-
             echo "----- SYSTEMD LOG -----"
             sudo journalctl -u agribotics-inference --no-pager -n 100 || true
-
             echo "----- INFERENCE LOG -----"
-            tail -100 /home/ec2-user/agribotics-deeplearning/inference.log || true
-
+            tail -100 inference.log || true
             exit 1
           fi
