@@ -25,6 +25,13 @@ OPTIONAL_PARAMETERS = (
 
 ALL_PARAMETERS = REQUIRED_PARAMETERS + OPTIONAL_PARAMETERS
 
+HARD_THRESHOLDS = {
+    "nitrogenLevel": (280,560),
+    "phosphorousLevel": (22.5,56),
+    "potassiumLevel": (140,280),
+    "organicCarbonLevel": (5,7.5),
+}
+
 def analyze_soil_event(event: dict[str,Any]) -> dict[str,str]:
     logger.info(
         "Processing soil analysis | Job ID: %s | Latitude: %s | Longitude: %s",
@@ -46,6 +53,29 @@ def analyze_soil_event(event: dict[str,Any]) -> dict[str,str]:
             continue
 
         numeric_value = float(value)
+
+        if parameter in HARD_THRESHOLDS:
+            low_threshold,high_threshold = HARD_THRESHOLDS[parameter]
+
+            if numeric_value < low_threshold:
+                level = "low"
+            elif numeric_value < high_threshold:
+                level = "medium"
+            else:
+                level = "high"
+
+            result_payload[parameter] = level
+
+            logger.info(
+                "Soil parameter analyzed | Job ID: %s | Parameter: %s | Value: %.4f | Level: %s",
+                job_id,
+                parameter,
+                numeric_value,
+                level,
+            )
+
+            continue
+
         minimum_threshold = max(numeric_value - 25,0)
         maximum_threshold = numeric_value + 25
         optimum_threshold = rng.uniform(minimum_threshold,maximum_threshold)
